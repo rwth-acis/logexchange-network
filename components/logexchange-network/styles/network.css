@@ -1,0 +1,162 @@
+.node.fixed circle {
+  stroke: #f00 !important;
+}
+
+a {
+  color:inherit;
+  text-decoration: none;
+ }
+
+a.tooltip span{
+  display: none;
+}
+
+a.tooltip:hover span{
+  position: absolute;
+  /* top: 26px; */
+  /* left: 10%; */
+  /* right: 10%; */
+  top: 5%;
+  right: 5%;
+  left: 5%;
+  display: block;
+  background: #333;
+  background: rgba(0, 0, 0, .8);
+  border-radius: 5px;
+  color: #fff;
+  padding: 5px 15px;
+  z-index: 99;
+}
+
+/* a.tooltip:hover:before span{ */
+/*   border: solid; */
+/*   border-color: #333 transparent; */
+/*   border-width: 0 6px 6px 6px; */
+/*   top: 20px; */
+/*   content: ""; */
+/*   left: 50%; */
+/*   position: absolute; */
+/*   z-index: 99; */
+/* } */
+
+/*  */
+/* .tooltip:hover:before{ */
+/*   border: solid; */
+/*   border-color: #333 transparent; */
+/*   border-width: 0 6px 6px 6px; */
+/*   top: 20px; */
+/*   content: ""; */
+/*   left: 50%; */
+/*   position: absolute; */
+/*   z-index: 99; */
+/* } */
+
+/* .brush { */
+/*   stroke: #fff; */
+/*   fill-opacity: .5; */
+/*   shape-rendering: crispEdges; */
+/* } */
+/*  */
+/* .brush .extent { */
+/*   stroke: #fff; */
+/*   fill-opacity: .125; */
+/*   shape-rendering: crispEdges; */
+/* } */
+/*  */
+/* .axis line { */
+/*   fill: none; */
+/*   stroke: #000; */
+/*   shape-rendering: crispEdges; */
+/* } */
+
+#network {
+  clip-path: url(#clip);
+  position: relative; /* IK 2016-01-15: was absolute before */
+}
+
+
+/* .overlay { */
+/*   fill: none; */
+  /* stroke: #fff; */
+  /* fill-opacity: .1; */
+/*   pointer-events: all; */
+/* } */
+
+a.button {
+  -webkit-appearance: button;
+  -moz-appearance: button;
+  appearance: button;
+}
+
+a.download-itunes {
+  text-decoration: none;
+  background-color: #52a8e8;
+  background-image: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #52a8e8), color-stop(100%, #377ad0));
+  background-image: -webkit-linear-gradient(top, #52a8e8, #377ad0);
+  background-image: -moz-linear-gradient(top, #52a8e8, #377ad0);
+  background-image: -ms-linear-gradient(top, #52a8e8, #377ad0);
+  background-image: -o-linear-gradient(top, #52a8e8, #377ad0);
+  background-image: linear-gradient(top, #52a8e8, #377ad0);
+  border-top: 1px solid #4081af;
+  border-right: 1px solid #2e69a3;
+  border-bottom: 1px solid #20559a;
+  border-left: 1px solid #2e69a3;
+  border-radius: 16px;
+  -webkit-box-shadow: inset 0 1px 0 0 #72b9eb, 0 1px 2px 0 #b3b3b3;
+  box-shadow: inset 0 1px 0 0 #72b9eb, 0 1px 2px 0 #b3b3b3;
+  color: #fff;
+  font: normal 11px/1 "lucida grande", sans-serif;
+  padding: 3px 5px;
+  text-align: center;
+  text-shadow: 0 -1px 1px #3275bc;
+  width: 112px;
+  -webkit-background-clip: padding-box; }
+  a.download-itunes:hover {
+    background-color: #3e9ee5;
+    background-image: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #3e9ee5), color-stop(100%, #206bcb));
+    background-image: -webkit-linear-gradient(top, #3e9ee5 0%, #206bcb 100%);
+    background-image: -moz-linear-gradient(top, #3e9ee5 0%, #206bcb 100%);
+    background-image: -ms-linear-gradient(top, #3e9ee5 0%, #206bcb 100%);
+    background-image: -o-linear-gradient(top, #3e9ee5 0%, #206bcb 100%);
+    background-image: linear-gradient(top, #3e9ee5 0%, #206bcb 100%);
+    border-top: 1px solid #2a73a6;
+    border-right: 1px solid #165899;
+    border-bottom: 1px solid #07428f;
+    border-left: 1px solid #165899;
+    -webkit-box-shadow: inset 0 1px 0 0 #62b1e9;
+    box-shadow: inset 0 1px 0 0 #62b1e9;
+    cursor: pointer;
+    text-shadow: 0 -1px 1px #1d62ab;
+    -webkit-background-clip: padding-box; }
+  a.download-itunes:active {
+    background: #3282d3;
+    border: 1px solid #154c8c;
+    border-bottom: 1px solid #0e408e;
+    -webkit-box-shadow: inset 0 0 6px 3px #1657b5, 0 1px 0 0 white;
+    box-shadow: inset 0 0 6px 3px #1657b5, 0 1px 0 0 white;
+    text-shadow: 0 -1px 1px #2361a4;
+    -webkit-background-clip: padding-box; }
+
+a[disabled].download-itunes,
+a[disabled].download-itunes:hover,
+a[disabled].download-itunes:active {
+  background-color: #dadada;
+  background-image: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #dadada), color-stop(100%, #f3f3f3));
+  background-image: -webkit-linear-gradient(top, #dadada, #f3f3f3);
+  background-image: -moz-linear-gradient(top, #dadada, #f3f3f3);
+  background-image: -ms-linear-gradient(top, #dadada, #f3f3f3);
+  background-image: -o-linear-gradient(top, #dadada, #f3f3f3);
+  background-image: linear-gradient(top, #dadada, #f3f3f3);
+  border-top: 1px solid #c5c5c5;
+  border-right: 1px solid #cecece;
+  border-bottom: 1px solid #d9d9d9;
+  border-left: 1px solid #cecece;
+  -webkit-box-shadow: none;
+  box-shadow: none;
+  color: #8f8f8f;
+  cursor: not-allowed;
+  text-shadow: 0 -1px 1px #ebebeb; }
+
+a.download-itunes::-moz-focus-inner {
+  border: 0;
+  padding: 0; }

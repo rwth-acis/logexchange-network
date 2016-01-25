@@ -1,0 +1,111 @@
+@CHARSET "UTF-8";
+
+
+#loginDiv {
+	display: block;	
+}
+
+#filterDiv {
+	display: none;	
+}
+
+#addDatabaseDiv {
+	display: none;	
+}
+
+#addFilterDiv {
+	display: none;	
+}
+
+#delFilterDiv {
+	display: none;	
+}
+
+.header {
+	font-weight: bold;
+	font-size: 1.2em;
+	margin: 0.2em;	
+}
+
+.label {
+	display: inline-block;
+    width: 6em;
+}
+
+.input {
+	display: inline-block;
+	margin-top: 0.1em;
+	margin-bottom: 0.1em;
+	width: 15em;
+}
+
+.selector {
+	display: inline-block;
+	width: 16em;
+	margin-bottom: 0.1em;
+    margin-top: 0.1em;	
+}
+
+.button {
+	margin-top: 1em;
+	width: 7em;	
+}
+
+#addDBButton {
+	margin-left: 7.2em;
+    margin-bottom: 1em;
+	width: 5em;
+}
+
+#delDBButton {
+	width: 5em;
+}
+	
+#databaseFilter {
+    width: 16em;
+}
+
+#fromFilter {
+    width: 6em;
+}
+
+#untilFilter {
+    width: 6em;
+}
+
+.hasLeftMargin {
+	margin-left: 10px;	
+}
+
+.dateInput {
+	width: 158px;
+    margin-bottom: 0.2em;
+}
+
+
+#addFilterButton {
+	width: 8em;
+    margin-top: 1em;
+    margin-left: 7.5em;
+}
+
+#delFilterButton {
+	width: 8em;
+    margin-top: 1em;
+}
+
+#preparedSQLQuery {
+	margin-left: 8em;	
+}
+
+#loginButton {
+	position: relative;
+	left: 155px;
+	width: 100px;
+    margin-top: 1.5em;	
+}
+
+#logoutButton {
+	margin-top: 20px;
+	width: 84px;	
+}

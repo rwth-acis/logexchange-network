@@ -1,0 +1,36 @@
+{
+  "name": "logexchange-network",
+  "authors": [
+    "István Koren",
+    "Andreas Guth"
+  ],
+  "description": "An element for analyzing the network structure spanned by XMPP clients and servers.",
+  "keywords": [
+    "web-component",
+    "polymer"
+  ],
+  "main": "logexchange-network.html",
+  "license": "https://raw.githubusercontent.com/rwth-acis/logexchange-network/master/LICENSE",
+  "homepage": "https://github.com/rwth-acis/logexchange-network/",
+  "ignore": [
+    "/.*",
+    "/test/"
+  ],
+  "dependencies": {
+    "polymer": "Polymer/polymer#^1.2.0"
+  },
+  "devDependencies": {
+    "iron-component-page": "PolymerElements/iron-component-page#^1.0.0",
+    "web-component-tester": "^4.0.0"
+  },
+  "_release": "08a18979e1",
+  "_resolution": {
+    "type": "branch",
+    "branch": "master",
+    "commit": "08a18979e16d683bfe33a569b4d09fb23993d798"
+  },
+  "_source": "git://github.com/rwth-acis/logexchange-network.git",
+  "_target": "master",
+  "_originalSource": "rwth-acis/logexchange-network",
+  "_direct": true
+}
