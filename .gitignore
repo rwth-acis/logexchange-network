@@ -1,0 +1,6 @@
+bower_components
+
+### WebStorm ###
+*.iml
+## Directory-based project format:
+.idea/

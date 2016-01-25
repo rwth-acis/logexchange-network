@@ -1,0 +1,1079 @@
+<link rel="import" href="../polymer/polymer.html">
+
+<!--
+An element for analyzing the network structure spanned by XMPP clients and servers.
+
+Example:
+
+    <logexchange-network><logexchange-network>
+
+@demo demo/index.html
+@hero hero.svg
+-->
+
+<dom-module id="logexchange-network">
+
+    <link rel="stylesheet" href="styles/masterGadget.css">
+    <link rel="stylesheet" href="styles/network.css">
+
+    <script type="text/javascript" src="scripts/d3.v3.min.js"></script>
+    <script type="text/javascript" src="scripts/jsnetworkx.js"></script>
+    <script type="text/javascript" src="scripts/legend.js"></script>
+    <script type="text/javascript" src="scripts/coffee.js"></script>
+
+    <template>
+        <div id="NetworkControlDiv">
+            <form action="javascript:void(0);" class="loginForm">
+                <fieldset>
+                    <a class="tooltip"><img style="float:right;" src="logexchange/images/mark.png"><span><h4>Usage Help</h4>The size of nodes and links is determined by the amount of received and sent stanzas.<br><br>XMPP connections are shown in black.<br>Direct p2p connections are shown in red.<br>Nodes can be dragged with the mouse and will stick to the dragged position. Stickied Nodes will have a red border.<br>Double-clicking will release them again.<br><br>The Graph can be zoomed with the Mousewheel.<br>Holding Shift while zooming will use semantic zoom instead. (changes distances instead of size)<br><br>The timeline on the bottom can be used to limit the graph to logging data in a selected time period.<br> </span></a>
+                    <legend>Stanzalog Filter</legend>
+                    <div>
+                        <!-- <button type="button" id="drawrick">Show Network</button> -->
+                        <div title="Physical: Includes nodes a stanza passes through (usually servers)&#xD;Logical: Shows links between sender and receiver" class="tooltip" style="display: inline-block;">
+                            <label for="viz_select">Network style</label>
+                            <select id="viz_select" name="viz_select" size=1 disabled>
+                                <option id="viz_physical" value="viz_physical" selected>Physical</option>
+                                <option id="viz_logical" value="viz_logical">Logical</option>
+                            </select>
+                        </div>
+                        <button title="Opens/Closes the Import and Export buttons" id="imex_button">Import/Export Data</button>
+                    </div>
+                    <div title='Sets the maximum number of nodes/links that should be shown. Will scale with if the maximum number if set to "All"'>
+                        <div style="display: inline-block;">
+                            <label id="node_limit_label" for="node_thresh">Node Limit: All</label>
+                            <input id="node_thresh_slider" type="range" min="0" max="100" value="0" name="node_thresh" disabled></input>
+                        </div>
+                        <div style="display: inline-block;">
+                            <label id="line_limit_label" for="link_thresh">Link Limit: All</label>
+                            <input id="line_thresh_slider" type="range" min="0" max="100" value="0" name="link_thresh" disabled></input>
+                        </div>
+                    </div>
+                    <div id="export" style="display: none;">
+                        <div>
+                            Export current view as:
+                            <button id="export_button">SVG</button>
+                            <button id="gexf_button">GEXF</button>
+                        </div>
+                        <div>
+                            Export log data as JSON:
+                            <button id="json_export">Export</button>
+                            Import JSON:
+                            <input title="The data will be automatically imported after selection!" type="file" id="file" name="Import Session" accept="application/json"/>
+                        </div>
+                    </div>
+                    <!-- <button type="button" id="jsnx_button">JSNX</button> -->
+                </fieldset>
+            </form>
+        </div>
+        <div id="jsnx"></div>
+        <div id="network"></div>
+        <div id="legend"></div>
+        <a id="export_link"></a>
+    </template>
+
+    <script>
+        Polymer({
+            is: 'logexchange-network',
+            properties: {
+            },
+
+            // Element Lifecycle
+
+            /**
+             * Called after all elements have been configured. Initializes the element.
+             *
+             */
+            ready: function() {
+                selector = null;
+                this.init_ui();
+            },
+
+            min_r: 5,
+            max_r: 40,
+            calc_r: 35, //this.max_r - this.min_r,
+            min_width: 1,
+            max_width: 10,
+            calc_width: this.max_width - this.min_width,
+
+            receiveEnvelope: function(env) {
+                if (env.event.startsWith("logexchange_Stanza")) {
+                    return this.handleLog(env.message);
+                }
+            },
+
+            handleLog: function(log) {
+                if (!this.graph) {
+                    return;
+                }
+                return this.graph.add_log(log);
+            },
+
+            getDomainFromJid: function(jid) {
+                var bare, parts;
+                bare = this.getBareJidFromJid(jid);
+                if (bare.indexOf("@") < 0) {
+                    return bare;
+                } else {
+                    parts = bare.split("@");
+                    parts.splice(0, 1);
+                    return parts.join('@');
+                }
+            },
+
+            getBareJidFromJid: function(jid) {
+                if (jid) {
+                    return jid.split("/")[0];
+                } else {
+                    return null;
+                }
+            },
+
+            link_nodes: function(x, y, mode, p2p) {
+                var link, lo, max, max_value, new_link, x_id, y_id;
+                if (x.id === y.id) {
+                    return;
+                }
+                x_id = x.id;
+                y_id = y.id;
+                lo = mode.links_obj;
+                if (lo[x_id] == null) {
+                    lo[x_id] = {};
+                }
+                if (lo[y_id] == null) {
+                    lo[y_id] = {};
+                }
+                link = lo[x_id][y_id];
+                new_link = false;
+                if (!link) {
+                    if (x_id < y_id) {
+                        link = new this.Link(x, y, p2p);
+                    } else {
+                        link = new this.Link(y, x, p2p);
+                    }
+                    new_link = true;
+                    lo[x_id][y_id] = link;
+                    lo[y_id][x_id] = link;
+                    mode.links.push(link);
+                    max_value = +this.line_slider.attr("max");
+                    if (mode.links.length >= max_value) {
+                        max = max_value <= +this.line_slider.attr("value");
+                        this.line_slider.attr("max", mode.links.length + 1);
+                        if (max) {
+                            this.line_slider.attr("value", mode.links.length + 1);
+                        }
+                    }
+                }
+                link.count++;
+                if (p2p) {
+                    link.p2p = true;
+                }
+                mode.max_line_count = d3.max([mode.max_line_count, link.count]);
+                return new_link;
+            },
+
+            Node: (function() {
+                function Node(id, weight, start) {
+                    this.id = id;
+                    this.weight = weight != null ? weight : 8;
+                    this.start = start;
+                    this.type = __indexOf.call(this.id, "@") >= 0 && "client" || "server";
+                    this.links = {};
+                    this.count = 0;
+                }
+
+                Node.prototype.getText = function(hide) {
+                    var jidsplit, node, _, _i, _len, _ref;
+                    if (!hide) {
+                        return this.id;
+                    }
+                    if (this.type === "client") {
+                        jidsplit = this.id.split("@");
+                        node = "";
+                        _ref = jidsplit[0];
+                        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                            _ = _ref[_i];
+                            node += "…";
+                        }
+                        return "" + node + "@" + jidsplit[1];
+                    } else {
+                        return this.id;
+                    }
+                };
+
+                return Node;
+
+            })(),
+
+            Link: (function() {
+                Link.color = "#000000";
+
+                Link.p2pcolor = "#F00000";
+
+                Link.opacity = "0.3";
+
+                Link.p2popacity = "1.0";
+
+                function Link(source, target, p2p, start) {
+                    this.source = source;
+                    this.target = target;
+                    this.p2p = p2p;
+                    this.start = start;
+                    this.count = 0;
+                    this.width = 1.5;
+                    this.start = this.source.start;
+                }
+
+                Link.prototype.getColor = function() {
+                    if (this.p2p) {
+                        return Link.p2pcolor;
+                    } else {
+                        return Link.color;
+                    }
+                };
+
+                Link.prototype.getOpacity = function() {
+                    if (this.p2p) {
+                        return Link.p2popacity;
+                    } else {
+                        return Link.opacity;
+                    }
+                };
+
+                return Link;
+
+            })(),
+
+            Graph: (function() {
+                Graph.prototype.physical = {
+                    max_line_count: 1,
+                    links_obj: {},
+                    links: [],
+                    nodes: [],
+                    nodes_obj: {},
+                    name: "physical"
+                };
+
+                Graph.prototype.logical = {
+                    max_line_count: 1,
+                    links_obj: {},
+                    links: [],
+                    nodes: [],
+                    nodes_obj: {},
+                    name: "logical"
+                };
+
+                function Graph() {
+                    this.add_nodes = __bind(this.add_nodes, this);
+                    this.brushed = __bind(this.brushed, this);
+                    this.width = 500;
+                    this.height = 400;
+                    this.height_brush = 50;
+                    this.color = d3.scale.category20();
+                    this.timescale = null;
+                    this.force = null;
+                    this.drag = null;
+                    this.svg = null;
+                    this.brush = null;
+                    this.xAxis = null;
+                    this.circles = null;
+                    this.lines = null;
+                    this.logs = [];
+                    this.mode = this.physical;
+                }
+
+                Graph.prototype.tick = function(that) {
+                    return function() {
+                        that.circles.attr("transform", function(d) {
+                            return "translate(" + d.x + "," + d.y + ")scale(" + that.inv_scale + ")";
+                        });
+                        return that.lines.attr("x1", function(d) {
+                            return d.source.x;
+                        }).attr("y1", function(d) {
+                            return d.source.y;
+                        }).attr("x2", function(d) {
+                            return d.target.x;
+                        }).attr("y2", function(d) {
+                            return d.target.y;
+                        }).style("stroke-width", function(d) {
+                            return that.inv_scale * that.get_line_width(d);
+                        });
+                    };
+                };
+
+                Graph.prototype.resize = function(that) {
+                    return function() {
+                        var topOffset;
+                        topOffset = d3.select("#NetworkControlDiv").node().offsetHeight;
+                        d3.select("#network").style("top", "" + topOffset + "px");
+                        that.width = window.innerWidth;
+                        that.height = window.innerHeight - topOffset;
+                        that.svg.attr("width", that.width).attr("height", that.height);
+                        that.overlay.attr("width", that.width * 4).attr("height", (that.height - that.height_brush) * 4);
+                        that.force.size([that.width, that.height - that.height_brush]).resume();
+                        that.timescale.range([0, that.width]);
+                        that.brush.x(that.timescale);
+                        return that.context.attr("transform", "translate(0," + (that.height - that.height_brush) + ")").call(that.xAxis);
+                    };
+                };
+
+                Graph.prototype.dblclick = function(that) {
+                    return function(d) {
+                        d3.select(this).classed("fixed", d.fixed = false);
+                        return that.force.start();
+                    };
+                };
+
+                Graph.prototype.dragstart = function(d) {
+                    d3.event.sourceEvent.stopPropagation();
+                    return d3.select(this).classed("fixed", d.fixed = true);
+                };
+
+                Graph.prototype.zoomfunc = function(that) {
+                    return function() {
+                        if (that.current_zoom === "geometric") {
+                            return that.network.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+                        } else if (that.current_zoom === "semantic") {
+                            return that.circles.attr("transform", that.semantic_zoom_transform);
+                        }
+                    };
+                };
+
+                Graph.prototype.current_zoom = "geometric";
+
+                Graph.prototype.export_gexf = function() {
+                    var color, data, gcolor, gedges, gexf, gg, glink, gnode, gnodes, gposition, gshape, gsize, i, l, n, tempStore, thick, _i, _j, _len, _len1, _ref, _ref1;
+                    gexf = document.createElement("gexf");
+                    gexf.setAttribute("xmlns", "http://www.gexf.net/1.2draft");
+                    gexf.setAttribute("xmlns:viz", "http://www.gexf.net/1.2draft/viz");
+                    gexf.setAttribute("version", "1.2");
+                    gg = document.createElement("graph");
+                    gg.setAttribute("mode", "dynamic");
+                    gg.setAttribute("timeformat", "dateTime");
+                    gg.setAttribute("defaultedgetype", "undirected");
+                    gexf.appendChild(gg);
+                    tempStore = {};
+                    gnodes = document.createElement("nodes");
+                    _ref = this.force.nodes();
+                    for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
+                        n = _ref[i];
+                        gnode = document.createElement("node");
+                        gnode.setAttribute("id", i);
+                        gnode.setAttribute("start", n.start);
+                        gnode.setAttribute("label", n.id);
+                        tempStore[n.id] = i;
+                        color = hexToRgb(this.color(this.gadget.getDomainFromJid(n.id)));
+                        gcolor = document.createElement("viz:color");
+                        gcolor.setAttribute("r", color.r);
+                        gcolor.setAttribute("g", color.g);
+                        gcolor.setAttribute("b", color.b);
+                        gnode.appendChild(gcolor);
+                        gposition = document.createElement("viz:position");
+                        gposition.setAttribute("x", n.x);
+                        gposition.setAttribute("y", this.height - n.y);
+                        gposition.setAttribute("z", 0);
+                        gnode.appendChild(gposition);
+                        gshape = document.createElement("viz:shape");
+                        gshape.setAttribute("value", "disc");
+                        gsize = document.createElement("viz:size");
+                        gsize.setAttribute("value", this.get_node_width(n));
+                        gnode.appendChild(gsize);
+                        gnodes.appendChild(gnode);
+                    }
+                    gg.appendChild(gnodes);
+                    gedges = document.createElement("edges");
+                    _ref1 = this.force.links();
+                    for (i = _j = 0, _len1 = _ref1.length; _j < _len1; i = ++_j) {
+                        l = _ref1[i];
+                        glink = document.createElement("edge");
+                        glink.setAttribute("id", i);
+                        glink.setAttribute("source", tempStore[l.source.id]);
+                        glink.setAttribute("target", tempStore[l.target.id]);
+                        glink.setAttribute("start", l.start);
+                        glink.setAttribute("weight", l.count);
+                        color = hexToRgb(l.getColor());
+                        gcolor = document.createElement("viz:color");
+                        gcolor.setAttribute("r", color.r);
+                        gcolor.setAttribute("g", color.g);
+                        gcolor.setAttribute("b", color.b);
+                        gcolor.setAttribute("a", l.getOpacity());
+                        glink.appendChild(gcolor);
+                        thick = document.createElement("viz:thickness");
+                        thick.setAttribute("value", l.width);
+                        glink.appendChild(thick);
+                        gedges.appendChild(glink);
+                    }
+                    gg.appendChild(gedges);
+                    data = "application/xml;charset=utf-8," + encodeURIComponent(gexf.outerHTML);
+                    d3.select("#export_link").attr("href", "data:" + data).attr("download", "export.gexf");
+                    this.gadget.export_click();
+                    return gexf;
+                };
+
+                Graph.prototype.export_logs = function() {
+                    var data;
+                    data = "text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.logs));
+                    d3.select("#export_link").attr("href", "data:" + data).attr("download", "logs.json");
+                    return this.gadget.export_click();
+                };
+
+                Graph.prototype.import_logs = function(json) {
+                    var log, logs, _i, _len;
+                    logs = JSON.parse(json);
+                    for (_i = 0, _len = logs.length; _i < _len; _i++) {
+                        log = logs[_i];
+                        this.add_log(log);
+                    }
+                };
+
+                Graph.prototype.start = function() {
+                    var first_date, _ref;
+                    this.force = d3.layout.force().nodes(this.mode.nodes).links(this.mode.links).charge(-300).theta(0.5).linkDistance(120).size([this.width, this.height - this.height_brush]).on("tick", this.tick(this));
+                    this.drag = this.force.drag().on("dragstart", this.dragstart);
+                    first_date = ((_ref = this.logs[0]) != null ? _ref.timestamp : void 0) && new Date(this.logs[0].timestamp) || new Date();
+                    this.timescale = d3.time.scale().range([0, this.width]).domain([first_date, first_date]);
+                    this.xAxis = d3.svg.axis().scale(this.timescale).orient("bottom");
+                    this.brush = d3.svg.brush().x(this.timescale).on("brush", this.brushed);
+                    this.svg = d3.select("#network").append("svg").attr("width", this.width).attr("height", this.height).attr("xmlns", "http://www.w3.org/2000/svg").style("font-family", "arial,sans-serif");
+                    this.zoom_scale = 1;
+                    this.inv_scale = 1;
+                    this.zoom = d3.behavior.zoom();
+                    this.network = this.svg.append("g").call(this.zoom.on("zoom", (function(_this) {
+                        return function() {
+                            if (d3.event.sourceEvent instanceof WheelEvent) {
+                                if (d3.event.sourceEvent.shiftKey) {
+                                    _this.inv_scale = _this.inv_scale * _this.zoom_scale / d3.event.scale;
+                                }
+                                _this.zoom_scale = d3.event.scale;
+                                if (d3.event.sourceEvent.shiftKey) {
+                                    _this.network.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+                                    _this.circles.attr("transform", function(d) {
+                                        return "translate(" + d.x + "," + d.y + ")scale(" + _this.inv_scale + ")";
+                                    });
+                                } else {
+                                    _this.network.transition().duration(200).attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")").selectAll(".node").attr("transform", function(d) {
+                                        return "translate(" + d.x + "," + d.y + ")scale(" + _this.inv_scale + ")";
+                                    });
+                                }
+                            } else {
+                                _this.network.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+                                _this.circles.attr("transform", function(d) {
+                                    return "translate(" + d.x + "," + d.y + ")scale(" + _this.inv_scale + ")";
+                                });
+                            }
+                            return _this.force.start();
+                        };
+                    })(this))).on("dblclick.zoom", null).append("g").attr("id", "network");
+                    this.overlay = this.network.append("rect").attr("class", "overlay").attr("width", this.width * 4).attr("height", (this.height - this.height_brush) * 4).attr("transform", "translate(-" + (this.width / 4) + ",-" + ((this.height - this.height_brush) * 2) + ")").style("fill", "none").style("pointer-events", "all");
+                    this.context = this.svg.append("g").attr("class", "context").attr("title", "Selecting an area here will restrict the graph to nodes and links in the selected time period.").attr("transform", "translate(0," + (this.height - this.height_brush) + ")");
+                    this.context.append("g").attr("class", "x axis").call(this.xAxis);
+                    this.brushsvg = this.context.append("g").attr("class", "x brush").call(this.brush);
+                    this.brushsvg.selectAll("rect").attr("y", -6).attr("height", this.height_brush + 7);
+                    (this.resize(this))();
+                    d3.select(window).on("resize", this.resize(this));
+                    this.brush.extent(this.timescale.domain());
+                    this.brushsvg.call(this.brush);
+                    this.svg.selectAll(".brush").style("stroke", "#fff").style("fill-opacity", ".5").style("shape-rendering", "crispEdges").selectAll(".extent").style("stroke", "#fff").style("fill-opacity", ".125").style("shape-rendering", "crispEdges");
+                    this.svg.select(".axis line").style("stroke", "#000").style("fill", "none").style("shape-rendering", "crispEdges");
+                    return this.limit(Infinity, Infinity);
+                };
+
+                Graph.prototype.queue_redraw = function() {
+                    if (this.queued) {
+                        return;
+                    }
+                    this.queued = true;
+                    return d3.timer((function(_this) {
+                        return function() {
+                            _this.create_svg_elements();
+                            _this.queued = false;
+                            return true;
+                        };
+                    })(this), 500);
+                };
+
+                Graph.prototype.create_svg_elements = function() {
+                    var node;
+                    this.force.stop();
+                    this.lines = this.network.selectAll(".link");
+                    this.lines = this.lines.data(this.force.links(), function(d) {
+                        return d.source.id + ("-" + d.target.id);
+                    }).attr("stroke-width", (function(_this) {
+                        return function(d) {
+                            return _this.get_line_width(d);
+                        };
+                    })(this));
+                    this.lines.enter().insert("line", ".node").attr("class", "link").attr("stroke-width", (function(_this) {
+                        return function(d) {
+                            return _this.get_line_width(d);
+                        };
+                    })(this)).style("stroke", function(d) {
+                        return d.getColor();
+                    }).style("stroke-width", "1.5px").style("stroke-opacity", function(d) {
+                        return d.getOpacity();
+                    });
+                    this.lines.exit().remove();
+                    this.circles = this.network.selectAll(".node");
+                    this.circles.select("circle").attr("r", (function(_this) {
+                        return function(d) {
+                            return _this.get_node_width(d);
+                        };
+                    })(this));
+                    var that = this;
+                    this.circles.select("text").attr("font-size", function(d) {
+                        return "" + (d3.max([that.gadget.min_fontsize, d.r])) + "px";
+                    }).attr("transform", function(d) {
+                        return "translate(" + (d.r + 1) + ",0)";
+                    });
+                    this.circles = this.circles.data(this.force.nodes(), function(d) {
+                        return d.id;
+                    });
+                    node = this.circles.enter().append("g").attr("class", function(d) {
+                        return "node " + d.id + (d.fixed === 1 ? " fixed" : "");
+                    }).on("dblclick", this.dblclick(this)).call(this.drag);
+                    node.append("svg:circle").attr("r", (function(_this) {
+                        return function(d) {
+                            return _this.get_node_width(d);
+                        };
+                    })(this)).style("fill", (function(_this) {
+                        return function(d) {
+                            return _this.color(_this.gadget.getDomainFromJid(d.id));
+                        };
+                    })(this)).style("cursor", "pointer").style("stroke", "#000").style("stroke-width", "1.5px");
+                    var that = this;
+                    node.append("svg:text").attr("text-anchor", "left").style("pointer-events", "none").attr("font-size", function(d) {
+                        return d3.max([that.gadget.min_fontsize, d.r]) + "px";
+                    }).attr("transform", function(d) {
+                        return "translate(" + (d.r + 3) + ",0)";
+                    }).text(function(d) {
+                        return d.getText();
+                    });
+                    this.circles.exit().remove();
+                    return this.force.start();
+                };
+
+                Graph.prototype.get_line_width = function(d) {
+                    return d.width = ((d.count / this.mode.max_line_count) * this.gadget.calc_width) + this.gadget.min_width;
+                };
+
+                Graph.prototype.get_node_width = function(d) {
+                    return d.r = ((d.count / this.mode.max_node_count) * this.gadget.calc_r) + this.gadget.min_r;
+                };
+
+                Graph.prototype.show_physical = function() {
+                    this.mode = this.physical;
+                    this.force.stop().nodes([]).links([]);
+                    this.create_svg_elements();
+                    this.force.stop().nodes(this.mode.nodes).links(this.mode.links);
+                    return this.limit(this.node_thresh, this.line_thresh);
+                };
+
+                Graph.prototype.show_logical = function() {
+                    this.mode = this.logical;
+                    this.force.stop().nodes([]).links([]);
+                    this.create_svg_elements();
+                    this.force.stop().nodes(this.mode.nodes).links(this.mode.links);
+                    return this.limit(this.node_thresh, this.line_thresh);
+                };
+
+                Graph.prototype.brushed = function() {
+                    return this.re_add_logs();
+                };
+
+                Graph.prototype.re_add_logs = function() {
+                    if (this.redraw_timeout) {
+                        clearTimeout(this.redraw_timeout);
+                    }
+                    return this.redraw_timeout = setTimeout((function(_this) {
+                        return function() {
+                            var first, last, log, new_logs, _i, _j, _len, _len1, _ref, _ref1, _ref2;
+                            _this.force.stop().nodes([]).links([]);
+                            _this.create_svg_elements();
+                            _this.physical = {
+                                max_line_count: 1,
+                                links_obj: {},
+                                links: [],
+                                nodes: [],
+                                nodes_obj: {},
+                                name: "physical"
+                            };
+                            _this.logical = {
+                                max_line_count: 1,
+                                links_obj: {},
+                                links: [],
+                                nodes: [],
+                                nodes_obj: {},
+                                name: "logical"
+                            };
+                            switch (_this.mode.name) {
+                                case "physical":
+                                    _this.mode = _this.physical;
+                                    break;
+                                case "logical":
+                                    _this.mode = _this.logical;
+                            }
+                            _this.force.stop().nodes(_this.mode.nodes).links(_this.mode.links);
+                            _this.create_svg_elements();
+                            new_logs = [];
+                            _ref = _this.logs;
+                            for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                                log = _ref[_i];
+                                _ref1 = _this.brush.extent(), first = _ref1[0], last = _ref1[1];
+                                if ((first <= (_ref2 = new Date(log.timestamp)) && _ref2 <= last)) {
+                                    new_logs.push(log);
+                                }
+                            }
+                            if (_this.force) {
+                                _this.force.stop();
+                            }
+                            for (_j = 0, _len1 = new_logs.length; _j < _len1; _j++) {
+                                log = new_logs[_j];
+                                _this.add_logical(log);
+                                _this.add_physical(log);
+                            }
+                            _this.limit(_this.node_thresh, _this.line_thresh);
+                            _this.redraw_timeout = null;
+                        };
+                    })(this), 100);
+                };
+
+                Graph.prototype.add_log = function(log) {
+                    var ext_first, ext_last, first, last, new_stamp, _ref, _ref1;
+                    this.logs.push(log);
+                    if (this.timescale) {
+                        _ref = this.timescale.domain(), first = _ref[0], last = _ref[1];
+                        _ref1 = this.brush.extent(), ext_first = _ref1[0], ext_last = _ref1[1];
+                        new_stamp = new Date(log.timestamp);
+                        if (last < new_stamp) {
+                            this.timescale.domain([first, new_stamp]);
+                            this.context.select(".x.axis").call(this.xAxis);
+                            if (+last === +ext_last) {
+                                this.brush.extent([ext_first, new_stamp]);
+                            } else {
+                                this.brush.extent([ext_first, ext_last]);
+                            }
+                            this.brushsvg.call(this.brush);
+                        } else if (new_stamp < first) {
+                            this.timescale.domain([new_stamp, last]);
+                            this.context.select(".x.axis").call(this.xAxis);
+                            if (+first === +ext_first) {
+                                this.brush.extent([new_stamp, ext_last]);
+                            } else {
+                                this.brush.extent([ext_first, ext_last]);
+                            }
+                            this.brushsvg.call(this.brush);
+                        }
+                        if ((ext_first <= new_stamp && new_stamp <= ext_last)) {
+                            this.force.stop();
+                            this.add_logical(log);
+                            this.add_physical(log);
+                            this.sorted_lines = false;
+                            this.sorted_nodes = false;
+                            return this.limit(this.node_thresh, this.line_thresh);
+                        }
+                    }
+                };
+
+                Graph.prototype.add_physical = function(log) {
+                    var fNode, fdNode, from, from_domain, max, max_value, n, new_fromD, new_toD, ns, p, tNode, tdNode, timestamp, to, to_domain, _ref, _ref1;
+                    from = this.gadget.getBareJidFromJid(log.subject);
+                    to = this.gadget.getBareJidFromJid(log.object);
+                    timestamp = log.timestamp;
+                    p = this.physical;
+                    _ref = this.add_nodes(from, to, p, timestamp), fNode = _ref[0], tNode = _ref[1];
+                    if ((_ref1 = log.tags) != null ? _ref1.p2p : void 0) {
+                        this.gadget.link_nodes(fNode, tNode, p, log.tags.p2p);
+                        return;
+                    }
+                    from_domain = this.gadget.getDomainFromJid(from);
+                    to_domain = this.gadget.getDomainFromJid(to);
+                    fdNode = null;
+                    tdNode = null;
+                    ns = p.nodes_obj;
+                    n = p.nodes;
+                    if (from !== from_domain) {
+                        if (!ns[from_domain]) {
+                            new_fromD = new this.gadget.Node(from_domain, void 0, timestamp);
+                            n.push(ns[from_domain] = new_fromD);
+                        }
+                        fdNode = ns[from_domain];
+                        fdNode.count++;
+                    }
+                    if (to !== to_domain) {
+                        if (!ns[to_domain]) {
+                            new_toD = new this.gadget.Node(to_domain, void 0, timestamp);
+                            n.push(ns[to_domain] = new_toD);
+                        }
+                        tdNode = ns[to_domain];
+                        tdNode.count++;
+                    }
+                    max_value = +this.gadget.node_slider.attr("max");
+                    if (n.length >= max_value) {
+                        max = max_value <= +this.gadget.node_slider.attr("value");
+                        this.gadget.node_slider.attr("max", n.length + 1);
+                        if (max) {
+                            this.gadget.node_slider.attr("value", n.length + 1);
+                        }
+                    }
+                    p.max_node_count = d3.max([(fdNode != null ? fdNode.count : void 0) || 0, (tdNode != null ? tdNode.count : void 0) || 0, p.max_node_count]);
+                    if (fdNode && tdNode) {
+                        this.gadget.link_nodes(fNode, fdNode, p);
+                        this.gadget.link_nodes(fdNode, tdNode, p);
+                        return this.gadget.link_nodes(tdNode, tNode, p);
+                    } else if (fdNode) {
+                        this.gadget.link_nodes(fNode, fdNode, p);
+                        return this.gadget.link_nodes(fdNode, tNode, p);
+                    } else if (tdNode) {
+                        this.gadget.link_nodes(fNode, tdNode, p);
+                        return this.gadget.link_nodes(tdNode, tNode, p);
+                    } else {
+                        return this.gadget.link_nodes(fNode, tNode, p);
+                    }
+                };
+
+                Graph.prototype.add_logical = function(log) {
+                    var fNode, from, l, tNode, to, _ref;
+                    from = this.gadget.getBareJidFromJid(log.subject);
+                    to = this.gadget.getBareJidFromJid(log.object);
+                    l = this.logical;
+                    _ref = this.add_nodes(from, to, l, log.timestamp), fNode = _ref[0], tNode = _ref[1];
+                    return this.gadget.link_nodes(fNode, tNode, l, log.tags.p2p);
+                };
+
+                Graph.prototype.add_nodes = function(from, to, mode, timestamp) {
+                    var fNode, max, max_value, n, new_from, new_to, ns, tNode;
+                    ns = mode.nodes_obj;
+                    n = mode.nodes;
+                    if (!ns[from]) {
+                        new_from = new this.gadget.Node(from, void 0, timestamp);
+                        n.push(ns[from] = new_from);
+                    }
+                    if (!ns[to]) {
+                        new_to = new this.gadget.Node(to, void 0, timestamp);
+                        n.push(ns[to] = new_to);
+                    }
+                    fNode = ns[from];
+                    tNode = ns[to];
+                    fNode.count++;
+                    tNode.count++;
+                    max_value = +this.gadget.node_slider.attr("max");
+                    if (n.length >= max_value) {
+                        max = max_value <= +this.gadget.node_slider.attr("value");
+                        this.gadget.node_slider.attr("max", n.length + 1);
+                        if (max) {
+                            this.gadget.node_slider.attr("value", n.length + 1);
+                        }
+                    }
+                    mode.max_node_count = d3.max([fNode.count, tNode.count, mode.max_node_count]);
+                    return [fNode, tNode];
+                };
+
+                Graph.prototype.threshold = function(node_thresh, line_thresh) {
+                    var lc, link, nc, new_links, new_nodes, nn, node;
+                    nn = {};
+                    lc = 1000 / this.mode.max_line_count;
+                    nc = 1000 / this.mode.max_node_count;
+                    new_nodes = (function() {
+                        var _i, _len, _ref, _results;
+                        _ref = this.mode.nodes;
+                        _results = [];
+                        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                            node = _ref[_i];
+                            if ((node.count * nc) > node_thresh && (nn[node.id] = true)) {
+                                _results.push(node);
+                            }
+                        }
+                        return _results;
+                    }).call(this);
+                    new_links = (function() {
+                        var _i, _len, _ref, _results;
+                        _ref = this.mode.links;
+                        _results = [];
+                        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                            link = _ref[_i];
+                            if (nn[link.target.id] && nn[link.source.id] && (link.count * lc) > line_thresh) {
+                                _results.push(link);
+                            }
+                        }
+                        return _results;
+                    }).call(this);
+                    this.node_thresh = node_thresh;
+                    this.line_thresh = line_thresh;
+                    this.force.stop().nodes(new_nodes).links(new_links);
+                    return this.queue_redraw();
+                };
+
+                Graph.prototype.limit = function(node_limit, line_limit) {
+                    var i, l, n, new_links, new_nodes, nn, _i, _j, _len, _len1, _ref;
+                    this.force.stop();
+                    nn = {};
+                    if (node_limit !== Infinity) {
+                        if (!this.sorted_nodes) {
+                            this.mode.nodes.sort(function(a, b) {
+                                return b.count - a.count;
+                            });
+                            this.sorted_nodes = true;
+                        }
+                        new_nodes = this.mode.nodes.slice(0, node_limit);
+                        for (_i = 0, _len = new_nodes.length; _i < _len; _i++) {
+                            n = new_nodes[_i];
+                            nn[n.id] = true;
+                        }
+                        this.force.nodes(new_nodes);
+                    }
+                    if (line_limit !== Infinity || node_limit !== Infinity) {
+                        if (!this.sorted_lines) {
+                            this.mode.links.sort(function(a, b) {
+                                return b.count - a.count;
+                            });
+                            this.sorted_lines = true;
+                        }
+                        new_links = [];
+                        i = 0;
+                        _ref = this.mode.links;
+                        for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+                            l = _ref[_j];
+                            if (nn[l.source.id] && nn[l.target.id]) {
+                                i++;
+                                new_links.push(l);
+                                if (i >= line_limit) {
+                                    break;
+                                }
+                            }
+                        }
+                        this.force.links(new_links);
+                    }
+                    this.node_thresh = node_limit;
+                    this.line_thresh = line_limit;
+                    return this.queue_redraw();
+                };
+
+                return Graph;
+
+            })(),
+
+            graph: null,
+
+            reset_graph: function() {
+                var key, nd, nd2, obj, value, _i, _j, _k, _len, _len1, _len2, _ref, _ref1, _ref2;
+                clearInterval(this.graph_brake_id);
+                this.graph.force.stop();
+                _ref = [this.graph.physical, this.graph.logical];
+                for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                    obj = _ref[_i];
+                    obj.max_line_count = 1;
+                    _ref1 = obj.links_obj;
+                    for (value = _j = 0, _len1 = _ref1.length; _j < _len1; value = ++_j) {
+                        key = _ref1[value];
+                        delete obj.links_obj[key];
+                    }
+                    while (obj.links.length) {
+                        obj.links.pop();
+                    }
+                    while (obj.nodes.length) {
+                        obj.nodes.pop();
+                    }
+                    _ref2 = this.graph.physical.nodes_obj;
+                    for (value = _k = 0, _len2 = _ref2.length; _k < _len2; value = ++_k) {
+                        key = _ref2[value];
+                        delete obj.nodes_obj[key];
+                    }
+                }
+                this.graph.force.stop().nodes(this.graph.mode.nodes).links(this.graph.mode.links);
+                nd = new Date();
+                nd2 = new Date(5000 + (+nd));
+                this.graph.timescale.domain([nd, nd2]);
+                this.graph.brush.extent([nd, nd2]);
+                this.graph.brushsvg.call(this.graph.brush);
+                this.graph.logs = [];
+                return this.graph.limit((this.graph.node_thresh = Infinity), (this.graph.line_thresh = Infinity));
+            },
+
+            hexToRgb: function(hex) {
+                var result;
+                result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                if (result) {
+                    return {
+                        r: parseInt(result[1], 16),
+                        g: parseInt(result[2], 16),
+                        b: parseInt(result[3], 16)
+                    };
+                } else {
+                    return null;
+                }
+            },
+
+            graph_brake_id: null,
+
+            graph_brake: function(graph) {
+                var _, _i, _results;
+                if (graph.force.alpha() < 0.01) {
+                    _results = [];
+                    for (_ = _i = 1; _i <= 150; _ = ++_i) {
+                        _results.push(graph.force.tick());
+                    }
+                    return _results;
+                }
+            },
+
+            node_slider: null,
+            node_label: null,
+            line_slider: null,
+            line_label: null,
+            min_fontsize: 12,
+
+            start_graph: function() {
+                this.graph.start();
+                d3.select("button#show_physical").property("disabled", false);
+                d3.select("button#show_logical").property("disabled", false);
+                d3.select("select#viz_select").property("disabled", false);
+                this.line_slider = d3.select("input#line_thresh_slider").property("disabled", false).attr("max", 51).attr("value", 51);
+                this.line_label = d3.select("label#line_limit_label");
+                this.node_slider = d3.select("input#node_thresh_slider").property("disabled", false).attr("max", 51).attr("value", 51);
+                this.node_label = d3.select("label#node_limit_label");
+                return d3.select("button#drawrick").text("Reset Graph").on("click", function() {
+                    return this.reset_graph();
+                });
+            },
+
+            to_jsnx: function(graph) {
+                var e, jg, n, _i, _j, _len, _len1, _ref, _ref1;
+                if (graph.force) {
+                    graph = graph.force;
+                }
+                jg = jsnx.Graph();
+                _ref = graph.nodes();
+                for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                    n = _ref[_i];
+                    jg.add_node(n.id, n);
+                }
+                _ref1 = graph.links();
+                for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
+                    e = _ref1[_j];
+                    jg.add_edge(e.source.id, e.target.id, e);
+                }
+                return jg;
+            },
+
+            jg: null,
+
+            jsnx_start: function() {
+                var color;
+                color = d3.scale.category20();
+                return jsnx.draw(jg, {
+                    element: '#jsnx',
+                    height: 400,
+                    width: 800,
+                    with_labels: true,
+                    label_style: {
+                        "text-anchor": "left",
+                        "pointer-events": "none"
+                    },
+                    node_attr: {
+                        r: function(d) {
+                            return d.data.count || 5;
+                        }
+                    },
+                    node_style: {
+                        "fill": function(d) {
+                            return color(this.getDomainFromJid(d.node));
+                        },
+                        "cursor": "pointer",
+                        "stroke": "#000",
+                        "stroke-width": "1.5px"
+                    },
+                    edge_style: {
+                        "stroke-width": 10,
+                        "stroke": "#000"
+                    }
+                }, false);
+            },
+
+
+            handleFileSelect: function(evt) {
+                var f, files, reader;
+                files = evt.target.files;
+                f = files[0];
+                reader = new FileReader();
+                reader.onload = (function(theFile) {
+                    return function(e) {
+                        return this.graph.import_logs(e.target.result);
+                    };
+                })(f);
+                return reader.readAsText(f);
+            },
+
+            export_click: function() {
+                var cb, evt;
+                evt = document.createEvent("MouseEvents");
+                evt.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+                cb = document.getElementById("export_link");
+                return cb.dispatchEvent(evt);
+            },
+
+            hide_exim: function() {
+                d3.select("#export").attr("style", "");
+                d3.select("#export").style("display", "none");
+                d3.select("#imex_button").on("click", show_exim);
+                if (this.graph) {
+                    return this.graph.resize(this.graph)();
+                }
+            },
+
+            show_exim: function() {
+                d3.select("#export").attr("style", "");
+                d3.select("#export").style("display", "block");
+                d3.select("#imex_button").on("click", this.hide_exim);
+                if (this.graph) {
+                    return this.graph.resize(this.graph)();
+                }
+            },
+
+            init_ui: function() {
+                this.graph = new this.Graph;
+                this.graph.gadget = this;
+                this.jg = jsnx.Graph();
+                this.start_graph();
+                var gadget = this;
+                d3.select("button#drawrick").on("click", function() {
+                    return gadget.start_graph();
+                });
+                d3.select("button#jsnx_button").on("click", function() {
+                    gadget.jg = gadget.to_jsnx(gadget.graph);
+                    console.log(gadget.jg);
+                    return this.jsnx_start();
+                });
+                d3.select("select#viz_select").on("change", function() {
+                    switch (this.value) { //TODO: check value
+                        case "viz_logical":
+                            return gadget.graph.show_logical();
+                        case "viz_physical":
+                            return gadget.graph.show_physical();
+                    }
+                });
+                d3.select("input#node_thresh_slider").on("change", function() {
+                    console.log(this.value);
+                    gadget.graph.limit(this.value, gadget.graph.line_thresh);
+                    return gadget.node_label.text("Node Limit: " + (this.value === this.max && "All" || this.value));
+                });
+                d3.select("input#line_thresh_slider").on("change", function() {
+                    console.log(this.value);
+                    gadget.graph.limit(gadget.graph.node_thresh, this.value);
+                    return gadget.line_label.text("Link Limit: " + (this.value === this.max && "All" || this.value));
+                });
+                d3.select("#export_button").on("click", function() {
+                    d3.select("#export_link").attr("href", "data:application/octet-stream;base64," + (btoa(d3.select("#network").html()))).attr("download", "network.svg");
+                    return gadget.export_click();
+                });
+                d3.select("#gexf_button").on("click", function() {
+                    return gadget.graph.export_gexf();
+                });
+                d3.select("#json_export").on("click", function() {
+                    return gadget.graph.export_logs();
+                });
+                d3.select("#imex_button").on("click", gadget.show_exim);
+                return document.getElementById('file').addEventListener('change', gadget.handleFileSelect, false);
+            }
+
+        });
+    </script>
+</dom-module>
